@@ -1,0 +1,152 @@
+---
+title: "Practical Machine Learning Project-Model Evaluation For Exercise Data Analyais"
+author: "Raju Vulapalli"
+date: "May 7, 2016"
+output: html_document
+---
+# Introduction
+## Background
+People are using devices like Jawbone Up, Fit bit and Nike Fuel Band to monitor their physical exercise activities. These devices generate lot of data and some enthusiasts are using this data to understand their activities to improve their health. People quantify and review how much of a particular activity they perform, but rarely see how well they do it.  In this project, an attempt has been made to analyze the data from these devices on the belt, forearm, arm, and dumbbell of six participants. More information is available from the website here: HTTP://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Data set).
+
+##Data
+
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. 
+
+## Getting and loading the data
+
+```{r}
+library(caret)  
+library(rpart)  
+library(rpart.plot)  
+library(RColorBrewer)  
+library(rattle)  
+library(randomForest)  
+library(knitr)  
+library(data.table)  
+setwd("~/Data Sciences/Practical Machine Learning/Project")
+##Getting and loading the data
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+#file names
+train.data ="~/Data Sciences/Practical Machine Learning/Project/pml-training.csv"
+test.data ="~/Data Sciences/Practical Machine Learning/Project/pml-testing.csv"
+
+# if directory does not exist, create new
+if (!file.exists("~/Data Sciences/Practical Machine Learning/Project")) {
+  dir.create("~/Data Sciences/Practical Machine Learning/Project")
+}
+# if files does not exist, download the files
+if (!file.exists(train.data)) {
+  download.file(trainUrl, destfile=train.data, method="curl")
+}
+if (!file.exists(test.data)) {
+  download.file(testUrl, destfile=test.data, method="curl")
+}
+# load the CSV files as data.frame 
+TrainData = read.csv("~/Data Sciences/Practical Machine Learning/Project/pml-training.csv", na.strings=c("NA",""), header=TRUE)
+TestData = read.csv("~/Data Sciences/Practical Machine Learning/Project/pml-testing.csv", na.strings=c("NA",""), header=TRUE)
+dim(TrainData)
+dim(TestData)
+# determine if both training and test data have same columns
+colnames_train <- colnames(TrainData)
+colnames_test <- colnames(TestData)
+# checking if the column names (excluding classe and problem_id) are identical in the training and test set.
+all.equal(colnames_train[1:length(colnames_train)-1], colnames_test[1:length(colnames_train)-1])
+```
+## Cleaning the data
+The columns containing mostly N As and that are not in the test set.  Since the test data set has no time dependence, these values are useless an can be excluded from the data analysis.  The first seven features are time-series and deleted from the data sets.  The resulting columns in both training and test data are verified.  
+
+```{r}
+# detemine the number of non-NAs in each col
+nonNAs <- function(x) {
+  as.vector(apply(x, 2, function(x) length(which(!is.na(x)))))
+}
+
+# Build vector of missing data or NA columns to drop.
+colcnts <- nonNAs(TrainData)
+drops <- c()
+for (cnt in 1:length(colcnts)) {
+  if (colcnts[cnt] < nrow(TrainData)) {
+    drops <- c(drops, colnames_train[cnt])
+  }
+}
+
+# Since the first 7 columns and NA containing columns are dropped as they're unnecessary for predicting.
+TrainData <- TrainData[,!(names(TrainData) %in% drops)]
+TrainData <- TrainData[,8:length(colnames(TrainData))]
+
+TestData <- TestData[,!(names(TestData) %in% drops)]
+TestData <- TestData[,8:length(colnames(TestData))]
+
+# Show remaining columns.
+colnames(TrainData)
+colnames(TestData)
+```
+##Bootstraping
+The data is divided into training part (75%) as training1 for model building and initial test training part (25%) as testing1 for model testing.
+```{r}
+set.seed(300)
+inTrain <- createDataPartition (y=TrainData$classe, p = 0.75, list = F)
+training1 = TrainData[inTrain,]
+testing1 = TrainData[-inTrain,]
+```
+
+## Model building
+
+### Evaluation by decession tress analysis
+First model using secession tree is evaluated using the out-of-box rpart functionality
+
+```{r}
+set.seed(12345)
+modfFit1 <- rpart(classe~., data = training1, method = "class")
+fancyRpartPlot(modfFit1)
+predictions1 <- predict(modfFit1, testing1, type = "class")
+confMatrixTree1 <- confusionMatrix(predictions1, testing1$classe)
+confMatrixTree1
+```
+
+The accuracy by this model is only 74%.
+
+### Random Forest Model
+Since Random Forest models usually results in more accuracy, the training data is evaluated using out-of-box Random Forest functionality.
+
+```{r}
+modfFit2 <- randomForest(classe~., data = training1)
+predictions2 <- predict(modfFit2, testing1, type = "class")
+confMatrixTree2 <- confusionMatrix(predictions2, testing1$classe)
+confMatrixTree2
+plot(modfFit2)
+```
+
+The resulted accuracy is 99.8% with Random Forest prediction using the training data set.
+
+## Run the predictions with Testing Data for the project using the Random Forest Model
+```{r}
+PredictionsTEST <- predict(modfFit2, TestData, type = "class")
+PredictionsTEST
+```
+
+## Conclusion
+The prediction of test data set containing 20 records using the random forest with an accuracy of 0.998 resulted in out of sample of error rate of 0.002. 
+
+## Writing the results to a text file for submission
+```{r}
+path = "~/Data Sciences/Practical Machine Learning/Project/Answers"
+pml_write_files = function(x) {
+  n = length(x)
+  for(i in 1: n) {
+    filename = paste0("problem_id_", i, ".txt")
+    write.table(x[i], file=file.path(path, filename), 
+                quote=FALSE, row.names=FALSE, col.names=FALSE)
+  }
+}
+pml_write_files(PredictionsTEST)
+```
+
+
+
